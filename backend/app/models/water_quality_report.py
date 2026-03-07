@@ -1,5 +1,5 @@
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app import db  # Import db from app/__init__.py
 
@@ -7,7 +7,7 @@ class WaterQualityReport(db.Model):
     __tablename__ = "water_quality_reports"  # Explicitly set the table name
 
     id = db.Column(db.Integer, primary_key=True)
-    date_created = db.Column(db.DateTime, default=datetime.utcnow)
+    date_created = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     location = db.Column(db.String(255), nullable=False)
     hpi_value = db.Column(db.Float, nullable=False)
     status = db.Column(db.String(50), nullable=False)
