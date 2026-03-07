@@ -1,9 +1,6 @@
 import pytest
 from app.services.indices.hpi import calculate_hpi
 
-# Sample reference data (should match your water_standards.json for tests)
-# You can mock it if needed, but here we test realistic scenarios.
-
 def test_calculate_hpi_basic(monkeypatch):
     """Test HPI calculation for known metal values"""
 

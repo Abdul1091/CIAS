@@ -95,3 +95,40 @@ def compute_dataset_hpi():
     df = analyze_dataset(file)
 
     return df.to_json(orient="records")
+
+@water_bp.route("/water/hpi", methods=["GET"])
+def get_all_hpi_reports():
+    """
+    Retrieve all HPI reports
+    ---
+    tags:
+      - Water Quality
+    responses:
+      200:
+        description: List of HPI reports
+    """
+    reports = WaterQualityReport.query.all()
+    return jsonify([report.to_dict() for report in reports])
+
+@water_bp.route("/water/hpi/<int:report_id>", methods=["GET"])
+def get_hpi_report(report_id):
+    """
+    Retrieve a single HPI report by ID
+    ---
+    tags:
+      - Water Quality
+    parameters:
+      - name: report_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      200:
+        description: Single HPI report
+      404:
+        description: Report not found
+    """
+    report = WaterQualityReport.query.get(report_id)
+    if not report:
+        return jsonify({"error": "Report not found"}), 404
+    return jsonify(report.to_dict())
