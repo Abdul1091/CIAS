@@ -1,0 +1,11 @@
+POST http://127.0.0.1:5000/api/water/hpi
+Content-Type: application/json
+
+{
+  "location": "River Niger",
+  "metals": [
+    { "metal": "Pb", "measured": 0.05 },
+    { "metal": "Cd", "measured": 0.01 },
+    { "metal": "Cu", "measured": 0.2 }
+  ]
+}
