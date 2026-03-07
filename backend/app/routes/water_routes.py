@@ -94,4 +94,4 @@ def compute_dataset_hpi():
     file = request.files["file"]
     df = analyze_dataset(file)
 
-    return df.to_json()
+    return df.to_json(orient="records")
