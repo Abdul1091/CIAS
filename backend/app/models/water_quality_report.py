@@ -5,7 +5,6 @@ from app import db  # Import db from app/__init__.py
 
 class WaterQualityReport(db.Model):
     __tablename__ = "water_quality_reports"  # Explicitly set the table name
-    __table_args__ = {"schema": "public"}  # Ensure it is in the public schema
 
     id = db.Column(db.Integer, primary_key=True)
     date_created = db.Column(db.DateTime, default=datetime.utcnow)
