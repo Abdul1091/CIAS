@@ -2,6 +2,8 @@ from flask import Blueprint, request, jsonify
 from app.services.indices.hpi import calculate_hpi
 from app.services.datasets.dataset_hpi_analysis import analyze_dataset
 from app.models.water_quality_report import WaterQualityReport
+from app.services.datasets.dataset_hei_analysis import analyze_dataset as analyze_hei_dataset
+from app.services.indices.hei import calculate_hei
 from app import db
 
 water_bp = Blueprint("water", __name__)
@@ -61,6 +63,7 @@ def compute_hpi():
     report = WaterQualityReport(
         location=location,
         hpi_value=hpi,
+        hei_value=0.0,
         status=status,
         metals_data=metals
     )
@@ -128,7 +131,70 @@ def get_hpi_report(report_id):
       404:
         description: Report not found
     """
-    report = WaterQualityReport.query.get(report_id)
+    report = db.session.get(WaterQualityReport, report_id)
     if not report:
         return jsonify({"error": "Report not found"}), 404
     return jsonify(report.to_dict())
+
+@water_bp.route("/water/hei", methods=["POST"])
+def compute_hei():
+    """
+    Compute Heavy Metal Evaluation Index (HEI)
+    ---
+    tags:
+      - Water Quality
+    consumes:
+      - application/json
+    parameters:
+      - in: body
+        name: body
+        schema:
+          type: object
+          properties:
+            metals:
+              type: array
+              items:
+                type: object
+                properties:
+                  metal:
+                    type: string
+                  measured:
+                    type: number
+    responses:
+      200:
+        description: HEI calculation result
+    """
+    data = request.json
+    metals = data.get("metals")
+    location = data.get("location")
+
+    if not metals:
+        return jsonify({"error": "Metals data required"}), 400
+
+    hei = calculate_hei(metals)
+
+    if hei is None:
+        return jsonify({"error": "Unable to compute HEI"}), 400
+
+    if hei < 10:
+        status = "Low Pollution"
+    elif hei <= 20:
+        status = "Medium Pollution"
+    else:
+        status = "High Pollution"
+
+    return jsonify({
+        "HEI": hei,
+        "status": status,
+        "location": location
+    })
+
+@water_bp.route("/water/hei/dataset", methods=["POST"])
+def compute_dataset_hei():
+    """
+    Compute HEI for a dataset
+    """
+    file = request.files["file"]
+    df = analyze_hei_dataset(file)
+
+    return df.to_json(orient="records")

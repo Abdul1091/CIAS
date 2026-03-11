@@ -83,4 +83,5 @@ dist/
 # Data files (optional)
 # =========================
 uploads/
-datasets/
+datasets/*.csv
+datasets/*.tmp

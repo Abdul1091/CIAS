@@ -58,12 +58,14 @@ def add_sample_reports(app):
         report1 = WaterQualityReport(
             location="River Niger",
             hpi_value=50.0,
+            hei_value=5.0,
             status="Safe",
             metals_data=[{"metal": "Pb", "measured": 0.05}]
         )
         report2 = WaterQualityReport(
             location="River Kaduna",
             hpi_value=120.0,
+            hei_value=15.0,
             status="Polluted",
             metals_data=[{"metal": "Cd", "measured": 0.06}]
         )
@@ -96,4 +98,64 @@ def test_get_single_report(client, add_sample_reports):
     response = client.get("/api/water/hpi/999")
     assert response.status_code == 404
     data = json.loads(response.data)
+    assert "error" in data
+
+
+def test_dataset_hei(client):
+    """Test POST /api/water/hei/dataset with CSV"""
+
+    csv_content = "Pb,Cd\n0.05,0.01\n0.1,0.02"
+
+    data = {
+        "file": (io.BytesIO(csv_content.encode()), "test.csv")
+    }
+
+    response = client.post(
+        "/api/water/hei/dataset",
+        content_type="multipart/form-data",
+        data=data
+    )
+
+    assert response.status_code == 200
+
+    json_data = json.loads(response.data)
+
+    assert len(json_data) == 2
+
+    for row in json_data:
+        assert "HEI" in row
+        assert "Pb" in row
+        assert "Cd" in row
+
+
+def test_compute_hei(client):
+    """Test POST /api/water/hei"""
+
+    payload = {
+        "metals": [
+            {"metal": "Pb", "measured": 0.05},
+            {"metal": "Cd", "measured": 0.01}
+        ]
+    }
+
+    response = client.post("/api/water/hei", json=payload)
+
+    assert response.status_code == 200
+
+    data = response.get_json()
+
+    assert "HEI" in data
+    assert "status" in data
+    assert isinstance(data["HEI"], float)
+
+
+def test_compute_hei_no_metals(client):
+    """Should return 400 if metals missing"""
+
+    response = client.post("/api/water/hei", json={})
+
+    assert response.status_code == 400
+
+    data = response.get_json()
+
     assert "error" in data
