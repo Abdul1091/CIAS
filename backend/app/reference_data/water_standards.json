@@ -1,7 +1,7 @@
 {
-  "Pb": { "ideal": 0, "permissible": 0.01 },
-  "Cd": { "ideal": 0, "permissible": 0.003 },
-  "Cr": { "ideal": 0.05, "permissible": 0.05 },
-  "Cu": { "ideal": 0.05, "permissible": 2.0 },
-  "Zn": { "ideal": 5.0, "permissible": 5.0 }
+  "Pb": { "ideal": 0, "permissible": 0.01, "background": 0.002 },
+  "Cd": { "ideal": 0, "permissible": 0.003, "background": 0.002 },
+  "Cr": { "ideal": 0.05, "permissible": 0.05, "background": 0.01 },
+  "Cu": { "ideal": 0.05, "permissible": 2.0, "background": 0.01 },
+  "Zn": { "ideal": 5.0, "permissible": 5.0, "background": 0.01 }
 }
