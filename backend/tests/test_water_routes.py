@@ -178,3 +178,54 @@ def test_compute_cf(client):
 
     assert "CF" in data
     assert "Pb" in data["CF"]
+    
+
+def test_compute_pli(client):
+    """Test POST /api/water/pli"""
+    payload = {
+        "location": "Test River",
+        "metals": [
+            {"metal": "Pb", "measured": 0.05},
+            {"metal": "Cd", "measured": 0.01}
+        ]
+    }
+
+    response = client.post("/api/water/pli", json=payload)
+    assert response.status_code == 200
+
+    data = response.get_json()
+    assert "PLI" in data
+    assert "pli_status" in data
+    assert "report_id" in data
+    assert isinstance(data["PLI"], float)
+    assert data["pli_status"] in ["Safe", "Polluted"]
+
+def test_compute_pli_no_metals(client):
+    """Should return 400 if metals are missing"""
+    payload = {"location": "Empty River"}
+    response = client.post("/api/water/pli", json=payload)
+    assert response.status_code == 400
+    data = response.get_json()
+    assert "error" in data
+
+def test_dataset_pli(client):
+    """Test POST /api/water/pli/dataset with CSV"""
+    csv_content = "Pb,Cd\n0.05,0.01\n0.1,0.02"
+    data = {"file": (io.BytesIO(csv_content.encode()), "test.csv")}
+
+    response = client.post(
+        "/api/water/pli/dataset",
+        content_type="multipart/form-data",
+        data=data
+    )
+
+    assert response.status_code == 200
+
+    # Convert JSON string to Python list
+    json_data = json.loads(response.data)
+    assert len(json_data) == 2  # Two rows
+
+    for row in json_data:
+        assert "PLI" in row
+        assert "Pb" in row
+        assert "Cd" in row

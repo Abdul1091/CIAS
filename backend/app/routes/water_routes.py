@@ -6,6 +6,8 @@ from app.services.datasets.dataset_hei_analysis import analyze_dataset as analyz
 from app.services.indices.hei import calculate_hei
 from app.services.indices.cf import calculate_cf
 from app.services.datasets.dataset_cf_analysis import analyze_dataset as analyze_cf_dataset
+from app.services.indices.pli import calculate_pli
+from app.services.datasets.dataset_pli_analysis import analyze_dataset as analyze_pli_dataset
 from app import db
 
 water_bp = Blueprint("water", __name__)
@@ -168,7 +170,7 @@ def compute_hei():
     """
     data = request.json
     metals = data.get("metals")
-    location = data.get("location", "Unknown")
+    location = data.get("location", "Unknown") 
 
     if not metals:
         return jsonify({"error": "Metals data required"}), 400
@@ -203,7 +205,20 @@ def compute_hei():
 @water_bp.route("/water/hei/dataset", methods=["POST"])
 def compute_dataset_hei():
     """
-    Compute HEI for a dataset
+    Compute Contamination Factor (CF) for a dataset (CSV)
+    ---
+    tags:
+      - Water Quality
+    consumes:
+      - multipart/form-data
+    parameters:
+      - name: file
+        in: formData
+        type: file
+        required: true
+    responses:
+      200:
+        description: Dataset HEI results
     """
     file = request.files["file"]
     df = analyze_hei_dataset(file)
@@ -298,4 +313,95 @@ def compute_dataset_cf():
     """
     file = request.files["file"]
     df = analyze_cf_dataset(file)
+    return df.to_json(orient="records")
+
+@water_bp.route("/water/pli", methods=["POST"])
+def compute_pli():
+    """
+    Compute Pollution Load Index (PLI)
+    ---
+    tags:
+      - Water Quality
+    consumes:
+      - application/json
+    parameters:
+      - in: body
+        name: body
+        schema:
+          type: object
+          properties:
+            location:
+              type: string
+            metals:
+              type: array
+              items:
+                type: object
+                properties:
+                  metal:
+                    type: string
+                  measured:
+                    type: number
+    responses:
+      200:
+        description: PLI calculation result
+        schema:
+          type: object
+          properties:
+            PLI:
+              type: number
+            status:
+              type: string
+            report_id:
+              type: integer
+    """
+    data = request.json
+    metals = data.get("metals")
+    location = data.get("location")
+
+    if not metals:
+        return jsonify({"error": "Metals data required"}), 400
+
+    pli = calculate_pli(metals)
+    if pli is None:
+        return jsonify({"error": "Unable to compute PLI"}), 400
+
+    # Status based on threshold (commonly: PLI >1 polluted)
+    pli_status = "Safe" if pli <= 1 else "Polluted"
+
+    report = WaterQualityReport(
+        location=location,
+        pli_value=pli,
+        pli_status=pli_status,
+        metals_data=metals
+    )
+    db.session.add(report)
+    db.session.commit()
+
+    return jsonify({
+        "PLI": pli,
+        "pli_status": pli_status,
+        "report_id": report.id
+    })
+
+@water_bp.route("/water/pli/dataset", methods=["POST"])
+def compute_dataset_pli():
+    """
+    Compute PLI for a dataset
+    ---
+    tags:
+      - Water Quality
+    consumes:
+      - multipart/form-data
+    parameters:
+      - name: file
+        in: formData
+        type: file
+        required: true
+    responses:
+      200:
+        description: Dataset PLI results
+    """
+    file = request.files["file"]
+    df = analyze_pli_dataset(file)
+
     return df.to_json(orient="records")
