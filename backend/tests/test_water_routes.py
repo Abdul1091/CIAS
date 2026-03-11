@@ -18,10 +18,10 @@ def test_compute_hpi(client):
 
     data = response.get_json()
     assert "HPI" in data
-    assert "status" in data
+    assert "hpi_status" in data
     assert "report_id" in data
     assert isinstance(data["HPI"], float)
-    assert data["status"] in ["Safe", "Polluted"]
+    assert data["hpi_status"] in ["Safe", "Polluted"]
 
 def test_compute_hpi_no_metals(client):
     # Should return 400 if metals missing
@@ -59,14 +59,14 @@ def add_sample_reports(app):
             location="River Niger",
             hpi_value=50.0,
             hei_value=5.0,
-            status="Safe",
+            hpi_status="Safe",
             metals_data=[{"metal": "Pb", "measured": 0.05}]
         )
         report2 = WaterQualityReport(
             location="River Kaduna",
             hpi_value=120.0,
             hei_value=15.0,
-            status="Polluted",
+            hpi_status="Polluted",
             metals_data=[{"metal": "Cd", "measured": 0.06}]
         )
         db.session.add_all([report1, report2])
@@ -83,7 +83,7 @@ def test_get_all_reports(client, add_sample_reports):
     assert isinstance(data, list)
     assert len(data) == 2
     assert data[0]["location"] == "River Niger"
-    assert data[1]["status"] == "Polluted"
+    assert data[1]["hpi_status"] == "Polluted"
 
 
 def test_get_single_report(client, add_sample_reports):
@@ -145,7 +145,7 @@ def test_compute_hei(client):
     data = response.get_json()
 
     assert "HEI" in data
-    assert "status" in data
+    assert "hei_status" in data
     assert isinstance(data["HEI"], float)
 
 
@@ -159,3 +159,22 @@ def test_compute_hei_no_metals(client):
     data = response.get_json()
 
     assert "error" in data
+
+
+def test_compute_cf(client):
+
+    payload = {
+        "metals": [
+            {"metal": "Pb", "measured": 0.04},
+            {"metal": "Cd", "measured": 0.01}
+        ]
+    }
+
+    response = client.post("/api/water/cf", json=payload)
+
+    assert response.status_code == 200
+
+    data = response.get_json()
+
+    assert "CF" in data
+    assert "Pb" in data["CF"]

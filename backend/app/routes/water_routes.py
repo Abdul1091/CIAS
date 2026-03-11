@@ -4,6 +4,8 @@ from app.services.datasets.dataset_hpi_analysis import analyze_dataset
 from app.models.water_quality_report import WaterQualityReport
 from app.services.datasets.dataset_hei_analysis import analyze_dataset as analyze_hei_dataset
 from app.services.indices.hei import calculate_hei
+from app.services.indices.cf import calculate_cf
+from app.services.datasets.dataset_cf_analysis import analyze_dataset as analyze_cf_dataset
 from app import db
 
 water_bp = Blueprint("water", __name__)
@@ -59,12 +61,12 @@ def compute_hpi():
         return jsonify({"error": "Metals data required"}), 400
 
     hpi = calculate_hpi(metals)
-    status = "Safe" if hpi < 100 else "Polluted"
+    hpi_status = "Safe" if hpi < 100 else "Polluted"
     report = WaterQualityReport(
         location=location,
         hpi_value=hpi,
         hei_value=0.0,
-        status=status,
+        hpi_status=hpi_status,
         metals_data=metals
     )
     db.session.add(report)
@@ -72,7 +74,7 @@ def compute_hpi():
 
     return jsonify({
         "HPI": hpi,
-        "status": status,
+        "hpi_status": hpi_status,
         "report_id": report.id
     })
 
@@ -166,7 +168,7 @@ def compute_hei():
     """
     data = request.json
     metals = data.get("metals")
-    location = data.get("location")
+    location = data.get("location", "Unknown")
 
     if not metals:
         return jsonify({"error": "Metals data required"}), 400
@@ -177,16 +179,25 @@ def compute_hei():
         return jsonify({"error": "Unable to compute HEI"}), 400
 
     if hei < 10:
-        status = "Low Pollution"
+        hei_status = "Low Pollution"
     elif hei <= 20:
-        status = "Medium Pollution"
+        hei_status = "Medium Pollution"
     else:
-        status = "High Pollution"
+        hei_status = "High Pollution"
+
+    report = WaterQualityReport(
+        location=location,
+        hei_value=hei,
+        hei_status=hei_status,
+        metals_data=metals
+        )
+    db.session.add(report)
+    db.session.commit()
 
     return jsonify({
         "HEI": hei,
-        "status": status,
-        "location": location
+        "hei_status": hei_status,
+        "report_id": report.id
     })
 
 @water_bp.route("/water/hei/dataset", methods=["POST"])
@@ -197,4 +208,94 @@ def compute_dataset_hei():
     file = request.files["file"]
     df = analyze_hei_dataset(file)
 
+    return df.to_json(orient="records")
+
+@water_bp.route("/water/cf", methods=["POST"])
+def compute_cf():
+    """
+    Compute Contamination Factor (CF) for metals
+    ---
+    tags:
+      - Water Quality
+    consumes:
+      - application/json
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          properties:
+            location:
+              type: string
+              example: River Niger
+            metals:
+              type: array
+              items:
+                type: object
+                properties:
+                  metal:
+                    type: string
+                  measured:
+                    type: number
+    responses:
+      200:
+        description: CF calculation result
+    """
+    data = request.json
+    metals = data.get("metals")
+    location = data.get("location", "Unknown")
+
+    if not metals:
+        return jsonify({"error": "Metals data required"}), 400
+
+    cf_values = calculate_cf(metals)
+    if not cf_values:
+        return jsonify({"error": "Unable to compute CF"}), 400
+
+    # Optional CF status based on CF values (example logic)
+    cf_status = "Low Pollution"
+    if any(v > 3 for v in cf_values.values()):
+        cf_status = "High Pollution"
+    elif any(v > 1 for v in cf_values.values()):
+        cf_status = "Medium Pollution"
+
+    # Save report to DB
+    report = WaterQualityReport(
+        location=location,
+        hpi_value=0.0,
+        hei_value=0.0,
+        cf_values=cf_values,
+        metals_data=metals,
+        cf_status=cf_status,
+    )
+    db.session.add(report)
+    db.session.commit()
+
+    return jsonify({
+        "CF": cf_values,
+        "cf_status": cf_status,
+        "report_id": report.id
+    })
+
+@water_bp.route("/water/cf/dataset", methods=["POST"])
+def compute_dataset_cf():
+    """
+    Compute Contamination Factor (CF) for a dataset (CSV)
+    ---
+    tags:
+      - Water Quality
+    consumes:
+      - multipart/form-data
+    parameters:
+      - name: file
+        in: formData
+        type: file
+        required: true
+    responses:
+      200:
+        description: Dataset CF results
+    """
+    file = request.files["file"]
+    df = analyze_cf_dataset(file)
     return df.to_json(orient="records")
