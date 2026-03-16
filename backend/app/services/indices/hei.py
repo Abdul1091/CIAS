@@ -1,16 +1,7 @@
-import json
-from pathlib import Path
-
-REFERENCE_FILE = Path(__file__).resolve().parents[2] / "reference_data" / "water_standards.json"
-
-
-def load_reference_data():
-    with open(REFERENCE_FILE) as f:
-        return json.load(f)
-
+from app.services.reference_loader import get_reference_data
 
 def calculate_hei(metals_data):
-    reference = load_reference_data()
+    reference = get_reference_data()
     hei = 0
 
     for metal in metals_data:
