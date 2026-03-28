@@ -43,51 +43,47 @@ def analyze_sample(metals, indices):
     Compute selected water quality indices, provide classification,
     reasoning for each index, and dominant pollution source.
     """
-
     results = {}
 
     # Always compute CF to identify dominant pollution source
-    cf_values = calculate_cf(metals)
-    dominant_source = get_dominant_metal(cf_values)
+    cf_values = calculate_cf(metals) or {}
+    dominant_source = get_dominant_metal(cf_values) or {}
 
     for index in indices:
-
         if index not in INDEX_FUNCTIONS:
             continue
 
         config = INDEX_FUNCTIONS[index]
-
         value = config["compute"](metals)
-
-        # Build classification and reasoning
         classification = config["classify"](value)
-        entry = {}
 
         if config["type"] == "dict":
-            entry["values"] = value
-            entry["classification"] = classification  # dict of metal -> category
+            # CF style
+            entry = {
+                "value": value,
+                "classification": classification
+            }
         else:
-            entry["value"] = value
-            entry["classification"] = classification  # dict with level + reason
-
-        # Add a human-readable reason for scalar indices
-        if config["type"] != "dict" and isinstance(classification, dict):
-            entry["reason"] = classification.get("reason")
+            # Scalar style
+            entry = {
+                "value": value,
+                "classification": {
+                    "level": classification.get("level") if classification else None,
+                    "reason": classification.get("reason") if classification else None
+                }
+            }
 
         results[index] = entry
 
     # Add dominant pollution source info
     results["pollution_source"] = dominant_source
 
-    # Build overall reasoning summary
+    # Build overall reasoning
     results["overall_reasoning"] = build_overall_reasoning(results)
 
     return results
 
 def build_overall_reasoning(results):
-    """
-    Collects all reasoning from index classifications into a list of strings.
-    """
     reasons = []
 
     for index, data in results.items():
@@ -96,9 +92,14 @@ def build_overall_reasoning(results):
 
         classification = data.get("classification")
 
-        if isinstance(classification, dict):
-            reason = classification.get("reason")
-            if reason:
-                reasons.append(f"{index}: {reason}")
+        # Scalar indices
+        if isinstance(classification, dict) and "reason" in classification:
+            reasons.append(f"{index}: {classification['reason']}")
+        # CF style (dict of metals)
+        elif isinstance(classification, dict):
+            for metal, meta in classification.items():
+                reason = meta.get("reason")
+                if reason:
+                    reasons.append(f"{index} ({metal}): {reason}")
 
     return reasons

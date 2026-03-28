@@ -50,7 +50,7 @@ def analyze_dataset(file, index_function, index_name):
         if isinstance(value, (int, float)):
             index_result = {index_name: {"value": value, "classification": None}}
         else:
-            index_result = {index_name: {"values": value, "classification": classify_cf(value)}}
+            index_result = {index_name: {"value": value, "classification": classify_cf(value)}}
 
         # Add pollution source for the row
         dominant = get_dominant_metal(value if index_name == "CF" else calculate_cf(metals))
@@ -77,8 +77,8 @@ def analyze_dataset(file, index_function, index_name):
             if k in ["row_id", "overall_reasoning", "pollution_source"]:
                 continue
 
-            if isinstance(v.get("values"), dict):
-                for metal, val in v["values"].items():
+            if isinstance(v.get("value"), dict):
+                for metal, val in v["value"].items():
                     flat[f"{k}_{metal}"] = val
                     flat[f"{k}_{metal}_classification"] = v["classification"].get(metal)
             else:

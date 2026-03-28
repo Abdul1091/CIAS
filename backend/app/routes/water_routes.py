@@ -1,25 +1,30 @@
 from flask import Blueprint, request, jsonify
-from app.services.indices.hpi import calculate_hpi
-from app.services.datasets.dataset_hpi_analysis import analyze_dataset
-from app.models.water_quality_report import WaterQualityReport
-from app.services.datasets.dataset_hei_analysis import analyze_dataset as analyze_hei_dataset
-from app.services.indices.hei import calculate_hei
-from app.services.indices.cf import calculate_cf
-from app.services.datasets.dataset_cf_analysis import analyze_dataset as analyze_cf_dataset
-from app.services.indices.pli import calculate_pli
-from app.services.datasets.dataset_pli_analysis import analyze_dataset as analyze_pli_dataset
+import json
 from app import db
+from app.models.water_quality_report import WaterQualityReport
+from app.logger import logger
+from app.services.analyzer import analyze_sample
+
+from app.services.datasets.dataset_index_analysis import analyze_index_dataset
+
 
 water_bp = Blueprint("water", __name__)
 
-@water_bp.route("/water/hpi", methods=["POST"])
-def compute_hpi():
+ALLOWED_INDICES = {"HPI", "HEI", "PLI", "CF"}
+
+@water_bp.route("/water/indices", methods=["POST"])
+def compute_indices():
     """
-    Compute Heavy Metal Pollution Index (HPI)
     ---
+    summary: Compute one or multiple water pollution indices
+    description: |
+      Computes selected water quality indices (HPI, HEI, PLI, CF) from provided metal measurements.
+      Returns index values, classifications, overall reasoning, and dominant pollution source.
     tags:
       - Water Quality
     consumes:
+      - application/json
+    produces:
       - application/json
     parameters:
       - in: body
@@ -30,7 +35,13 @@ def compute_hpi():
           properties:
             location:
               type: string
-              example: River Niger
+              example: Katsina River
+            indices:
+              type: array
+              items:
+                type: string
+                enum: ["HPI", "HEI", "PLI", "CF"]
+              example: ["HPI", "HEI", "PLI", "CF"]
             metals:
               type: array
               items:
@@ -41,367 +52,142 @@ def compute_hpi():
                     example: Pb
                   measured:
                     type: number
-                    example: 0.05
+                    example: 0.12
     responses:
       200:
-        description: HPI calculation result
-        schema:
-          type: object
-          properties:
-            HPI:
-              type: number
-            status:
-              type: string
-            report_id:
-              type: integer
+        description: Computed water quality report
+      400:
+        description: Missing metals data
     """
-    data = request.json
+    data = request.get_json()
     metals = data.get("metals")
-    location = data.get("location")
-
-    if not metals:
-        return jsonify({"error": "Metals data required"}), 400
-
-    hpi = calculate_hpi(metals)
-    hpi_status = "Safe" if hpi < 100 else "Polluted"
-    report = WaterQualityReport(
-        location=location,
-        hpi_value=hpi,
-        hei_value=0.0,
-        hpi_status=hpi_status,
-        metals_data=metals
-    )
-    db.session.add(report)
-    db.session.commit()
-
-    return jsonify({
-        "HPI": hpi,
-        "hpi_status": hpi_status,
-        "report_id": report.id
-    })
-
-@water_bp.route("/water/hpi/dataset", methods=["POST"])
-def compute_dataset_hpi():
-    """
-    Compute HPI for a dataset
-    ---
-    tags:
-      - Water Quality
-    consumes:
-      - multipart/form-data
-    parameters:
-      - name: file
-        in: formData
-        type: file
-        required: true
-    responses:
-      200:
-        description: Dataset HPI results
-    """
-    file = request.files["file"]
-    df = analyze_dataset(file)
-
-    return df.to_json(orient="records")
-
-@water_bp.route("/water/hpi", methods=["GET"])
-def get_all_hpi_reports():
-    """
-    Retrieve all HPI reports
-    ---
-    tags:
-      - Water Quality
-    responses:
-      200:
-        description: List of HPI reports
-    """
-    reports = WaterQualityReport.query.all()
-    return jsonify([report.to_dict() for report in reports])
-
-@water_bp.route("/water/hpi/<int:report_id>", methods=["GET"])
-def get_hpi_report(report_id):
-    """
-    Retrieve a single HPI report by ID
-    ---
-    tags:
-      - Water Quality
-    parameters:
-      - name: report_id
-        in: path
-        type: integer
-        required: true
-    responses:
-      200:
-        description: Single HPI report
-      404:
-        description: Report not found
-    """
-    report = db.session.get(WaterQualityReport, report_id)
-    if not report:
-        return jsonify({"error": "Report not found"}), 404
-    return jsonify(report.to_dict())
-
-@water_bp.route("/water/hei", methods=["POST"])
-def compute_hei():
-    """
-    Compute Heavy Metal Evaluation Index (HEI)
-    ---
-    tags:
-      - Water Quality
-    consumes:
-      - application/json
-    parameters:
-      - in: body
-        name: body
-        schema:
-          type: object
-          properties:
-            metals:
-              type: array
-              items:
-                type: object
-                properties:
-                  metal:
-                    type: string
-                  measured:
-                    type: number
-    responses:
-      200:
-        description: HEI calculation result
-    """
-    data = request.json
-    metals = data.get("metals")
-    location = data.get("location", "Unknown") 
-
-    if not metals:
-        return jsonify({"error": "Metals data required"}), 400
-
-    hei = calculate_hei(metals)
-
-    if hei is None:
-        return jsonify({"error": "Unable to compute HEI"}), 400
-
-    if hei < 10:
-        hei_status = "Low Pollution"
-    elif hei <= 20:
-        hei_status = "Medium Pollution"
-    else:
-        hei_status = "High Pollution"
-
-    report = WaterQualityReport(
-        location=location,
-        hei_value=hei,
-        hei_status=hei_status,
-        metals_data=metals
-        )
-    db.session.add(report)
-    db.session.commit()
-
-    return jsonify({
-        "HEI": hei,
-        "hei_status": hei_status,
-        "report_id": report.id
-    })
-
-@water_bp.route("/water/hei/dataset", methods=["POST"])
-def compute_dataset_hei():
-    """
-    Compute Contamination Factor (CF) for a dataset (CSV)
-    ---
-    tags:
-      - Water Quality
-    consumes:
-      - multipart/form-data
-    parameters:
-      - name: file
-        in: formData
-        type: file
-        required: true
-    responses:
-      200:
-        description: Dataset HEI results
-    """
-    file = request.files["file"]
-    df = analyze_hei_dataset(file)
-
-    return df.to_json(orient="records")
-
-@water_bp.route("/water/cf", methods=["POST"])
-def compute_cf():
-    """
-    Compute Contamination Factor (CF) for metals
-    ---
-    tags:
-      - Water Quality
-    consumes:
-      - application/json
-    parameters:
-      - in: body
-        name: body
-        required: true
-        schema:
-          type: object
-          properties:
-            location:
-              type: string
-              example: River Niger
-            metals:
-              type: array
-              items:
-                type: object
-                properties:
-                  metal:
-                    type: string
-                  measured:
-                    type: number
-    responses:
-      200:
-        description: CF calculation result
-    """
-    data = request.json
-    metals = data.get("metals")
+    indices = data.get("indices", list(ALLOWED_INDICES))
     location = data.get("location", "Unknown")
 
-    if not metals:
-        return jsonify({"error": "Metals data required"}), 400
+    logger.info(f"compute_indices called with location={location}, indices={indices}, metals={metals}")
 
-    cf_values = calculate_cf(metals)
-    if not cf_values:
-        return jsonify({"error": "Unable to compute CF"}), 400
+    # Validate metals
+    if not metals or not isinstance(metals, list):
+        return jsonify({"error": "Metals data must be a non-empty list"}), 400
 
-    # Optional CF status based on CF values (example logic)
-    cf_status = "Low Pollution"
-    if any(v > 3 for v in cf_values.values()):
-        cf_status = "High Pollution"
-    elif any(v > 1 for v in cf_values.values()):
-        cf_status = "Medium Pollution"
+    for m in metals:
+        if "metal" not in m or "measured" not in m:
+            return jsonify({"error": "Each metal must have 'metal' and 'measured' fields"}), 400
+        if not isinstance(m["measured"], (int, float)) or m["measured"] < 0:
+            return jsonify({"error": f"Invalid measured value for {m.get('metal')}"}), 400
+        
+    # Validate indices
+    invalid_indices = [idx for idx in indices if idx not in ALLOWED_INDICES]
+    if invalid_indices:
+        return jsonify({
+            "error": f"Invalid indices {invalid_indices}",
+            "allowed_indices": list(ALLOWED_INDICES)
+        }), 400
 
-    # Save report to DB
+    # Compute indices
+    try:
+        results = analyze_sample(metals, indices)
+    except Exception as e:
+        return jsonify({"error": "Index computation failed", "details": str(e)}), 500
+
     report = WaterQualityReport(
         location=location,
-        hpi_value=0.0,
-        hei_value=0.0,
-        cf_values=cf_values,
         metals_data=metals,
-        cf_status=cf_status,
+        hpi_value=results.get("HPI", {}).get("value"),
+        hpi_status=results.get("HPI", {}).get("classification") or {},
+        hei_value=results.get("HEI", {}).get("value"),
+        hei_status=results.get("HEI", {}).get("classification") or {},
+        pli_value=results.get("PLI", {}).get("value"),
+        pli_status=results.get("PLI", {}).get("classification") or {},
+        cf_values=results.get("CF", {}).get("value") or {},
+        cf_status=results.get("CF", {}).get("classification") or {},
+        pollution_source=results.get("pollution_source") or {},
+        overall_reasoning=results.get("overall_reasoning") or []
     )
+
     db.session.add(report)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.error("Index computation failed", exc_info=True)
+        return jsonify({"error": "Database commit failed", "details": str(e)}), 500
 
     return jsonify({
-        "CF": cf_values,
-        "cf_status": cf_status,
-        "report_id": report.id
+        "report_id": report.id,
+        "location": report.location,
+        "indices": {
+            "HPI": {"value": report.hpi_value, "classification": report.hpi_status},
+            "HEI": {"value": report.hei_value, "classification": report.hei_status},
+            "PLI": {"value": report.pli_value, "classification": report.pli_status},
+            "CF": {"value": report.cf_values, "classification": report.cf_status},
+        },
+        "pollution_source": report.pollution_source,
+        "overall_reasoning": report.overall_reasoning
     })
 
-@water_bp.route("/water/cf/dataset", methods=["POST"])
-def compute_dataset_cf():
+@water_bp.route("/water/dataset/<index>", methods=["POST"])
+def compute_dataset_index(index):
     """
-    Compute Contamination Factor (CF) for a dataset (CSV)
     ---
+    summary: Compute pollution index from dataset
+    description: |
+      Computes the specified water pollution index (HPI, HEI, PLI, CF) for each row
+      in a CSV or Excel dataset. Returns index values, classifications, overall reasoning,
+      and dominant pollution source per row.
     tags:
       - Water Quality
-    consumes:
-      - multipart/form-data
     parameters:
+      - name: index
+        in: path
+        required: true
+        type: string
+        enum: ["HPI", "HEI", "PLI", "CF"]
       - name: file
         in: formData
         type: file
         required: true
-    responses:
-      200:
-        description: Dataset CF results
-    """
-    file = request.files["file"]
-    df = analyze_cf_dataset(file)
-    return df.to_json(orient="records")
-
-@water_bp.route("/water/pli", methods=["POST"])
-def compute_pli():
-    """
-    Compute Pollution Load Index (PLI)
-    ---
-    tags:
-      - Water Quality
-    consumes:
-      - application/json
-    parameters:
-      - in: body
-        name: body
-        schema:
-          type: object
-          properties:
-            location:
-              type: string
-            metals:
-              type: array
-              items:
-                type: object
-                properties:
-                  metal:
-                    type: string
-                  measured:
-                    type: number
-    responses:
-      200:
-        description: PLI calculation result
-        schema:
-          type: object
-          properties:
-            PLI:
-              type: number
-            status:
-              type: string
-            report_id:
-              type: integer
-    """
-    data = request.json
-    metals = data.get("metals")
-    location = data.get("location")
-
-    if not metals:
-        return jsonify({"error": "Metals data required"}), 400
-
-    pli = calculate_pli(metals)
-    if pli is None:
-        return jsonify({"error": "Unable to compute PLI"}), 400
-
-    # Status based on threshold (commonly: PLI >1 polluted)
-    pli_status = "Safe" if pli <= 1 else "Polluted"
-
-    report = WaterQualityReport(
-        location=location,
-        pli_value=pli,
-        pli_status=pli_status,
-        metals_data=metals
-    )
-    db.session.add(report)
-    db.session.commit()
-
-    return jsonify({
-        "PLI": pli,
-        "pli_status": pli_status,
-        "report_id": report.id
-    })
-
-@water_bp.route("/water/pli/dataset", methods=["POST"])
-def compute_dataset_pli():
-    """
-    Compute PLI for a dataset
-    ---
-    tags:
-      - Water Quality
+        description: CSV or Excel file containing metal concentrations
     consumes:
       - multipart/form-data
-    parameters:
-      - name: file
-        in: formData
-        type: file
-        required: true
     responses:
       200:
-        description: Dataset PLI results
+        description: Dataset analysis results
+      400:
+        description: Invalid index or missing file
     """
-    file = request.files["file"]
-    df = analyze_pli_dataset(file)
+    file = request.files.get("file")
+    index = index.upper()
 
-    return df.to_json(orient="records")
+    if index not in ALLOWED_INDICES:
+        logger.warning(f"Invalid index '{index}' submitted")
+        return jsonify({
+            "error": f"Invalid index '{index}'",
+            "allowed_indices": list(ALLOWED_INDICES)
+        }), 400
+
+    if not file:
+        logger.warning("Dataset file missing in request")
+        return jsonify({"error": "Dataset file required"}), 400
+
+    # Determine file type
+    filename = file.filename.lower()
+    if filename.endswith(".csv"):
+        file_type = "csv"
+    elif filename.endswith((".xls", ".xlsx")):
+        file_type = "excel"
+    else:
+        logger.warning(f"Unsupported file type uploaded: {filename}")
+        return jsonify({"error": "Unsupported file type. Upload CSV or Excel file."}), 400
+
+    logger.info(f"compute_dataset_index called for index={index}, file={filename}, type={file_type}")
+
+    try:
+        df = analyze_index_dataset(file, index)
+    except Exception as e:
+        logger.error(f"Dataset analysis failed for index={index}", exc_info=True)
+        return jsonify({"error": "Dataset analysis failed", "details": str(e)}), 500
+
+    # Convert to JSON
+    results = json.loads(df.to_json(orient="records"))
+    return jsonify({"index": index, "results": results})

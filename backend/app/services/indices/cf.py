@@ -24,4 +24,4 @@ def calculate_cf(metals_data):
         cf = measured / background
         results[name] = round(cf, 3)
 
-    return results if results else None
+    return results
